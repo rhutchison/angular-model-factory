@@ -18,7 +18,14 @@ describe('A person model defined using modelFactory', function() {
         beforeEach(function() {
             angular.module('test-module', ['modelFactory'])
                 .factory('PersonModel', function($modelFactory) {
-                    return $modelFactory('/api/people');
+                    return $modelFactory('/api/people', {
+                        actions: {
+                            '$customDelete': {
+                                method: 'DELETE',
+                                url: 'customDelete/{id}'
+                            }
+                        }
+                    });
                 })
                 .factory('PersonWithMapModel', function($modelFactory) {
                     return $modelFactory('/api/peoplemodified', {
@@ -475,6 +482,34 @@ describe('A person model defined using modelFactory', function() {
                 $httpBackend.flush();
             });
 
+            it('should not include any data in the request body', function(){
+                var theModel = new PersonModel({
+                    id: 1234,
+                    name: 'Juri',
+                    age: 30
+                });
+
+                // act
+                theModel.$destroy();
+
+                $httpBackend.expect('DELETE', '/api/people/1234', null).respond(200, '');
+                $httpBackend.flush();
+            });
+
+            it('should not include any data in the request body for custom endpoints', function(){
+                var theModel = new PersonModel({
+                    id: 1234,
+                    name: 'Juri',
+                    age: 30
+                });
+
+                // act
+                theModel.$customDelete();
+
+                $httpBackend.expect('DELETE', '/api/people/customDelete/1234', null).respond(200, '');
+                $httpBackend.flush();
+            });
+
             it('should properly execute a correct DELETE request with a different PK name', function(){
                 var theModel = new PersonWithMapModel({
                     fooId: 1234
@@ -875,6 +910,131 @@ describe('A person model defined using modelFactory', function() {
                 });
 
             $httpBackend.expectGET('/api/addresses/customAction').respond(200, { rows: [{ id: 1, street: 'test'}], numRecords: 1 });
+            $httpBackend.flush();
+        });
+
+    });
+
+    describe('when backend respond with metadata', function() {
+        var StadiumModel, $httpBackend;
+
+        beforeEach(function() {
+            angular.module('test-module', ['modelFactory'])
+                .factory('StadiumModel', function($modelFactory) {
+                    return $modelFactory('/api/stadiums', {
+                        actions: {
+                            'base': {
+                                afterRequest: function(response) {
+                                    var transfrom = response.data;
+                                    delete response.data;
+                                    transfrom.meta = response;
+                                    return transfrom;
+                                }
+                            },
+                            'query': {
+                                afterRequest: function(response) {
+                                    var transfrom = response.data;
+                                    transfrom.paginator = response.paginator;
+                                    return transfrom;
+                                }
+                            },
+                        }
+                    });
+                });
+        });
+
+        beforeEach(angular.mock.module('test-module'));
+
+        beforeEach(inject(function(_StadiumModel_, _$httpBackend_) {
+            StadiumModel = _StadiumModel_;
+            $httpBackend = _$httpBackend_;
+        }));
+
+        afterEach(function() {
+            $httpBackend.verifyNoOutstandingExpectation();
+            $httpBackend.verifyNoOutstandingRequest();
+        });
+
+        it('when backend respond with pagination ', function() {
+            StadiumModel.query()
+                .then(function(result) {
+                    expect(result.length).toBe(3);
+                    expect(result.paginator.limit).toBe(3);
+                });
+
+            $httpBackend.expectGET('/api/stadiums').respond(200, {
+                'data': [{
+                    'title': 'Accusantium rem magni accusantium placeat.'
+                }, {
+                    'title': 'Maxime ut eum pariatur magni quia iusto.'
+                }, {
+                    'title': 'Sapiente perferendis consectetur ut ipsa consectetur.'
+                }],
+                'paginator': {
+                    'totalCount': 30,
+                    'totalPage': 10,
+                    'currentPage': 1,
+                    'limit': 3
+                }
+            });
+            $httpBackend.flush();
+        });
+        it('when backend respond with metadata ', function() {
+            StadiumModel.get(1)
+                .then(function(result) {
+                    // console.log(result.meta);
+                    expect(result.meta.status.code).toBe(1000);
+                    // expect(result.paginator.limit).toBe(3);
+                });
+
+            $httpBackend.expectGET('/api/stadiums/1').respond(200, {
+                'data': {
+                    'title': 'Accusantium rem magni accusantium placeat.'
+                },
+                'status': {
+                    'code': 1000
+                }
+            });
+            $httpBackend.flush();
+        });
+
+    });
+
+    describe('using the map property',function(){
+        var PersonModel, $httpBackend;
+
+         beforeEach(function() {
+            angular.module('test-module', ['modelFactory'])
+                .factory('PersonModel', function($modelFactory) {
+                    return $modelFactory('/api/people',{
+                        map:{
+                            'id' : 'personId',
+                            'address' :'street'
+                        }
+                    });
+                });
+        });
+
+        beforeEach(angular.mock.module('test-module'));
+
+        beforeEach(inject(function(_PersonModel_,_$httpBackend_) {
+            PersonModel = _PersonModel_;
+            $httpBackend = _$httpBackend_;
+        }));
+
+        afterEach(function() {
+            $httpBackend.verifyNoOutstandingExpectation();
+            $httpBackend.verifyNoOutstandingRequest();
+        });
+
+        it('setting map, transpose `personId` to `id` and `street` to `address` on our instance', function(){
+            PersonModel.query()
+                .then(function(result){
+                    expect(result[0].id).toBe(1);
+                    expect(result[0].address).toBe('test');
+                });
+
+            $httpBackend.expectGET('/api/people').respond(200, [{ personId: 1, street: 'test'}]);
             $httpBackend.flush();
         });
 

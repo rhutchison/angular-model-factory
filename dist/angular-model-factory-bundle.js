@@ -1,6 +1,6 @@
 /**
  * modelFactory makes working with RESTful APIs in AngularJS easy
- * @version v0.2.10 - 2015-05-06
+ * @version v0.4.0 - 2015-05-26
  * @link https://github.com/swimlane/model-factory
  * @author Austin McDaniel <amcdaniel2@gmail.com>, Juri Strumpflohner <juri.strumpflohner@gmail.com>
  * @license MIT License, http://www.opensource.org/licenses/MIT
@@ -411,7 +411,6 @@
 	
 	return UriTemplate;
 });
-
 /* global angular:false */
 'use strict';
 
@@ -495,7 +494,7 @@ var shallowClearAndCopy = function(src, dst) {
             // check for object references and recurse as needed. Route around
             // arrays to prevent value/order inconsistencies
             if(angular.isObject(src[key]) && !angular.isArray(src[key])) {
-                shallowClearAndCopy(src[key], dst[key]);
+                dst[key] = shallowClearAndCopy(src[key], dst[key]);
             } else {
                 // Not an object, so just overwrite with value from source
                 dst[key] = src[key];
@@ -803,8 +802,8 @@ module.provider('$modelFactory', function(){
                         // like: map: { date: function(val){ return moment(val) } }
                         value[k] = v(value[k], value);
                     } else {
-                        value[k] = value[k];
-                        delete value[k];
+                        value[k] = value[v];
+                        delete value[v];
                     }
                 });
 
@@ -874,7 +873,7 @@ module.provider('$modelFactory', function(){
                         if(arr){
                             arr.splice(arr.indexOf(instance), 1);
                         }
-                        
+
                         $rootScope.$broadcast(prettyName + '-destroyed', instance);
                     }, function(){
                         // rejected
@@ -997,6 +996,10 @@ module.provider('$modelFactory', function(){
                         uri += '/' + clone.url;
                     }
 
+
+                    // set the uri to the base
+                    uri = Model.$url(uri, data, clone.method);
+
                     // attach the pk referece by default if it is a 'core' type
                     if(action === 'get' || action === 'post' || action === 'update' || action === 'delete'){
                         uri += '/{' + options.pk + '}';
@@ -1027,10 +1030,10 @@ module.provider('$modelFactory', function(){
                     uri = clone.url;
                 }
 
-                clone.url = Model.$url(uri, data);
+                clone.url = Model.$url(uri, data, clone.method);
 
                 // don't include the payload for DELETE requests
-                if(action !== 'delete'){
+                if(action !== 'delete' && clone.method !== 'DELETE'){
                     clone.data = data;
                 }
 
@@ -1067,8 +1070,12 @@ module.provider('$modelFactory', function(){
 
                 $http(params).success(function(response){
                     // after callbacks
-                    params.afterRequest &&
-                        params.afterRequest(response);
+                    if(params.afterRequest) {
+                        var transform = params.afterRequest(response);
+                        if(transform) {
+                            response = transform;
+                        }
+                    }
 
                     // if we had a cache, remove it
                     // this could be optimized to only do
@@ -1122,9 +1129,29 @@ module.provider('$modelFactory', function(){
              * Based on:
              * https://github.com/geraintluff/uri-templates
              */
-            Model.$url = function(u, params){
+            Model.$url = function(u, params, method){
                 var uri = new UriTemplate(u || url)
-                    .fillFromObject(params || {});
+                            .fill(function(variableName){
+                                var resolvedVariable = params[variableName];
+
+                                // if we have a match, substitute and remove it
+                                // from the original params object
+                                if(resolvedVariable){
+                                    // only remove params on GET requests as the
+                                    // passed object is intended to be used
+                                    // as URL params. For persistent HTTP calls
+                                    // the object has to be left as it is (for now)
+                                    if(method === 'GET'){
+                                      delete params[variableName];
+                                    }
+
+                                    return resolvedVariable;
+                                }else{
+                                    // ?? log an error??
+                                    return null;
+                                }
+                            });
+                            // .fillFromObject(params || {});
 
                 if(options.stripTrailingSlashes){
                     uri = uri.replace(/\/+$/, '') || '/';
@@ -1165,8 +1192,6 @@ module.provider('$modelFactory', function(){
 
         return modelFactory;
     }];
-});
-
 });
 
 });

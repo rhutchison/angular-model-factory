@@ -414,8 +414,9 @@ module.provider('$modelFactory', function(){
                  * the instance has the `pk` attribute already then it will do a put.
                  */
                 instance.$save = function(){
-                     var actionType = instance[options.pk] ? 'update' : 'post',
-                         promise = Model[actionType](this);
+                    var args = Array.prototype.slice.call(arguments);
+                    var actionType = instance[options.pk] ? 'update' : 'post',
+                        promise = Model[actionType](this, args[0] || undefined);
 
                     instance.$pending = true;
 
@@ -612,6 +613,9 @@ module.provider('$modelFactory', function(){
                         // ZooModel.query({ type: 'panda' }) and do /api/zoo?type=panda
                         data = { param: data };
                         uri += '{?param*}';
+                    } else if((clone.method === 'POST' || clone.method === 'PUT' || clone.method === 'DELETE') && angular.isObject(data) && extras){
+                        data.param = extras;
+                        uri += '{?param*}';
                     }
                 } else {
                     uri = clone.url;
@@ -728,7 +732,7 @@ module.provider('$modelFactory', function(){
                                     // passed object is intended to be used
                                     // as URL params. For persistent HTTP calls
                                     // the object has to be left as it is (for now)
-                                    if(method === 'GET'){
+                                    if(method === 'GET' || variableName === 'param'){
                                       delete params[variableName];
                                     }
 
